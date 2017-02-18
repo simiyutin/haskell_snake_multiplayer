@@ -42,13 +42,13 @@ type Key = Char
 
 data Direction = L | R | U | D deriving Show
 type Position = (Int, Int)
-type GameState = ((Direction, Position), (Direction, Position)) -- todo Position -> Shape
+type GameState = ((Direction, [Position]), (Direction, [Position]))
   
 
 runGame :: Handle -> IO ()
 runGame hdl = do
 
-  mGameState <- newMVar ((U, (10, 10)), (L, (20, 10)))
+  mGameState <- newMVar ((U, [(10, 10),(12, 10),(14, 10)]), (L, [(20, 10), (20, 9), (20, 8)]))
 
   -- handle local input
   forkIO $ forever $ do
@@ -84,7 +84,7 @@ makeGameStep mGameState hdl = do
   putMVar mGameState state
 
 getFrame :: GameState -> IO String
-getFrame ((dir1, pos1), (dir2, pos2)) = return $ helper 80 24 ""
+getFrame ((dir1, shape1), (dir2, shape2)) = return $ helper 80 24 ""
   where
     helper 0  0  frame = frame
     helper 0  y  frame = helper 80 (pred y) (chr(10):frame)
@@ -93,23 +93,23 @@ getFrame ((dir1, pos1), (dir2, pos2)) = return $ helper 80 24 ""
     helper x  24 frame = helper (pred x) 24 ('-':frame)
     helper x  1  frame = helper (pred x) 0 ('-':frame)
     helper x  y  frame
-      | (x, y) == pos1 || (x, y) == pos2 = helper (pred x) y $ ('*':frame)
-      | otherwise                        = helper (pred x) y $ (' ':frame)
+      | elem (x, y) shape1 || elem (x, y) shape2 = helper (pred x) y $ ('*':frame)
+      | otherwise                                = helper (pred x) y $ (' ':frame)
 
 iterateState :: GameState -> IO GameState
-iterateState ((dir1, pos1), (dir2, pos2)) = let 
-    change (x, y) R = (x + 2, y)
-    change (x, y) L = (x - 2, y)
-    change (x, y) U = (x, y + 1)
-    change (x, y) D = (x, y - 1)
+iterateState ((dir1, shape1), (dir2, shape2)) = let 
+    change shape@((x, y):xs) R = ((x + 2, y): reverse ( drop 1 $ reverse shape))
+    change shape@((x, y):xs) L = ((x - 2, y): reverse ( drop 1 $ reverse shape))
+    change shape@((x, y):xs) U = ((x, y + 1): reverse ( drop 1 $ reverse shape))
+    change shape@((x, y):xs) D = ((x, y - 1): reverse ( drop 1 $ reverse shape))
   in
-    return ((dir1, change pos1 dir1), (dir2, change pos2 dir2))
+    return ((dir1, change shape1 dir1), (dir2, change shape2 dir2))
 
 
 updateDirection :: Player -> Key -> GameState -> IO GameState
-updateDirection player key ((dir1, pos1), (dir2, pos2)) = case player of 
-    Me    -> return ((getdir dir1 key, pos1), (dir2, pos2))
-    NotMe -> return ((dir1, pos1), (getdir dir2 key, pos2))
+updateDirection player key ((dir1, (pos1:xs)), (dir2, (pos2:xss))) = case player of 
+    Me    -> return ((getdir dir1 key, (pos1:xs)), (dir2, (pos2:xss)))
+    NotMe -> return ((dir1, (pos1:xs)), (getdir dir2 key, (pos2:xss)))
   where 
     getdir _ 'w'  = D
     getdir _ 'a'  = L
