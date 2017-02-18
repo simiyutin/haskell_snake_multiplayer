@@ -48,7 +48,7 @@ type GameState = ((Direction, Position), (Direction, Position)) -- todo Position
 runGame :: Handle -> IO ()
 runGame hdl = do
 
-  mGameState <- newMVar ((U, (0, 0)), (L, (50, 50)))
+  mGameState <- newMVar ((U, (10, 10)), (L, (20, 10)))
 
   -- handle local input
   forkIO $ forever $ do
@@ -64,26 +64,44 @@ runGame hdl = do
     updatedState <- updateDirection NotMe x state
     putMVar mGameState updatedState
 
-  forever $ do
-    prevstate <- takeMVar mGameState
-    state <- iterateState prevstate
+  -- main game loop
+  forever $ makeGameStep mGameState hdl >> threadDelay 500000
 
-    hPutStrLn hdl $ show state
-    print state
 
-    putMVar mGameState state
 
-    threadDelay 100000
-   
-  return ()
+makeGameStep :: MVar GameState -> Handle -> IO ()
+makeGameStep mGameState hdl = do 
+  prevstate <- takeMVar mGameState
 
+  state <- iterateState prevstate
+  frame <- getFrame state
+  clearScreens hdl
+  putStr frame
+
+  --hPutStrLn hdl $ show state
+  --print state
+
+  putMVar mGameState state
+
+getFrame :: GameState -> IO String
+getFrame ((dir1, pos1), (dir2, pos2)) = return $ helper 80 24 ""
+  where
+    helper 0  0  frame = frame
+    helper 0  y  frame = helper 80 (pred y) (chr(10):frame)
+    helper 80 y  frame = helper (pred 80) y ('|':frame)
+    helper 1  y  frame = helper 0 y ('|':frame)
+    helper x  24 frame = helper (pred x) 24 ('-':frame)
+    helper x  1  frame = helper (pred x) 0 ('-':frame)
+    helper x  y  frame
+      | (x, y) == pos1 || (x, y) == pos2 = helper (pred x) y $ ('*':frame)
+      | otherwise                        = helper (pred x) y $ (' ':frame)
 
 iterateState :: GameState -> IO GameState
 iterateState ((dir1, pos1), (dir2, pos2)) = let 
-    change (x, y) R = (succ x, y)
-    change (x, y) L = (pred x, y)
-    change (x, y) U = (x, succ y)
-    change (x, y) D = (x, pred y)
+    change (x, y) R = (x + 2, y)
+    change (x, y) L = (x - 2, y)
+    change (x, y) U = (x, y + 1)
+    change (x, y) D = (x, y - 1)
   in
     return ((dir1, change pos1 dir1), (dir2, change pos2 dir2))
 
@@ -93,9 +111,9 @@ updateDirection player key ((dir1, pos1), (dir2, pos2)) = case player of
     Me    -> return ((getdir dir1 key, pos1), (dir2, pos2))
     NotMe -> return ((dir1, pos1), (getdir dir2 key, pos2))
   where 
-    getdir _ 'w'  = U
+    getdir _ 'w'  = D
     getdir _ 'a'  = L
-    getdir _ 's'  = D
+    getdir _ 's'  = U
     getdir _ 'd'  = R
     getdir prev _ = prev
 
