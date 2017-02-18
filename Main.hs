@@ -2,7 +2,6 @@ module Main where
  
 import Network.Socket
 import System.IO
-import System.Console.ANSI
 import Control.Monad
 import Control.Concurrent
  
