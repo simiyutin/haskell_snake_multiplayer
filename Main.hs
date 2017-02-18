@@ -4,6 +4,8 @@ import Network.Socket
 import System.IO
 import Control.Monad
 import Control.Concurrent
+
+import Data.Char
  
 main :: IO ()
 main = do
@@ -14,6 +16,12 @@ main = do
 
     connection <- accept sock
     hdl <- handleConnection connection
+
+    -- force telnet client into character mode
+    -- Let's go fucking craazyyyy (c)
+    -- IAC DO LINEMODE IAC WILL ECHO (@see https://tools.ietf.org/html/rfc854#page-14,
+    -- http://users.cs.cf.ac.uk/Dave.Marshall/Internet/node141.html)
+    hPutStrLn hdl $ (chr(255):chr(253):chr(34):chr(255):chr(251):chr(1):[])
 
     runGame hdl
 
