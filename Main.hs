@@ -77,6 +77,17 @@ runGame hdl = do
   forever $ makeGameStep mGameState hdl >> threadDelay 100000
 
 
+updateDirection :: Player -> Key -> GameState -> IO GameState
+updateDirection player key ((dir1, (pos1:xs)), (dir2, (pos2:xss)), f) = case player of 
+    Me    -> return ((getdir dir1 key, (pos1:xs)), (dir2, (pos2:xss)), f)
+    NotMe -> return ((dir1, (pos1:xs)), (getdir dir2 key, (pos2:xss)), f)
+  where 
+    getdir _ 'w'  = D
+    getdir _ 'a'  = L
+    getdir _ 's'  = U
+    getdir _ 'd'  = R
+    getdir prev _ = prev
+
 
 makeGameStep :: MVar GameState -> Handle -> IO ()
 makeGameStep mGameState hdl = do 
@@ -84,25 +95,10 @@ makeGameStep mGameState hdl = do
 
   state <- execStateT iterateState prevstate
   frame <- getFrame state
-  clearScreens hdl
-  putStr frame
-  hPutStrLn hdl $ frame
+  renderFrame hdl frame
 
   putMVar mGameState state
 
-getFrame :: GameState -> IO String
-getFrame ((dir1, shape1), (dir2, shape2), f) = return $ helper 80 24 ""
-  where
-    helper 0  0  frame = frame
-    helper 0  y  frame = helper 80 (pred y) (chr(10):frame)
-    helper 80 y  frame = helper (pred 80) y ('|':frame)
-    helper 1  y  frame = helper 0 y ('|':frame)
-    helper x  24 frame = helper (pred x) 24 ('-':frame)
-    helper x  1  frame = helper (pred x) 0 ('-':frame)
-    helper x  y  frame
-      | elem (x, y) shape1 || elem (x, y) shape2 = helper (pred x) y $ ('*':frame)
-      | elem (x, y) f                            = helper (pred x) y $ ('O':frame)  
-      | otherwise                                = helper (pred x) y $ (' ':frame)
 
 iterateState :: StateT GameState IO ()
 iterateState = let
@@ -132,6 +128,7 @@ iterateState = let
     change me Me
     change notme NotMe
 
+
 getFruit :: StateT GameState IO Position
 getFruit = do
   x <- liftIO $ randomRIO (1, 39)
@@ -144,16 +141,26 @@ getFruit = do
     return fruit
 
 
-updateDirection :: Player -> Key -> GameState -> IO GameState
-updateDirection player key ((dir1, (pos1:xs)), (dir2, (pos2:xss)), f) = case player of 
-    Me    -> return ((getdir dir1 key, (pos1:xs)), (dir2, (pos2:xss)), f)
-    NotMe -> return ((dir1, (pos1:xs)), (getdir dir2 key, (pos2:xss)), f)
-  where 
-    getdir _ 'w'  = D
-    getdir _ 'a'  = L
-    getdir _ 's'  = U
-    getdir _ 'd'  = R
-    getdir prev _ = prev
+getFrame :: GameState -> IO String
+getFrame ((dir1, shape1), (dir2, shape2), f) = return $ helper 80 24 ""
+  where
+    helper 0  0  frame = frame
+    helper 0  y  frame = helper 80 (pred y) (chr(10):frame)
+    helper 80 y  frame = helper (pred 80) y ('|':frame)
+    helper 1  y  frame = helper 0 y ('|':frame)
+    helper x  24 frame = helper (pred x) 24 ('-':frame)
+    helper x  1  frame = helper (pred x) 0 ('-':frame)
+    helper x  y  frame
+      | elem (x, y) shape1 || elem (x, y) shape2 = helper (pred x) y $ ('*':frame)
+      | elem (x, y) f                            = helper (pred x) y $ ('O':frame)  
+      | otherwise                                = helper (pred x) y $ (' ':frame)
+
+
+renderFrame :: Handle -> String -> IO ()
+renderFrame hdl frame = do
+  clearScreens hdl
+  putStr frame
+  hPutStrLn hdl $ frame
 
 
 clearScreens :: Handle -> IO ()
