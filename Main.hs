@@ -42,13 +42,15 @@ type Key = Char
 
 data Direction = L | R | U | D deriving Show
 type Position = (Int, Int)
-type GameState = ((Direction, [Position]), (Direction, [Position]))
+type Snake = [Position]
+type Fruits = [Position]
+type GameState = ((Direction, Snake), (Direction, Snake), Fruits)
   
 
 runGame :: Handle -> IO ()
 runGame hdl = do
 
-  mGameState <- newMVar ((U, [(10, 10),(12, 10),(14, 10)]), (L, [(20, 10), (20, 9), (20, 8)]))
+  mGameState <- newMVar ((U, [(10, 10),(12, 10),(14, 10)]), (L, [(20, 10), (20, 9), (20, 8)]), [(60, 10)])
 
   -- handle local input
   forkIO $ forever $ do
@@ -77,6 +79,7 @@ makeGameStep mGameState hdl = do
   frame <- getFrame state
   clearScreens hdl
   putStr frame
+  hPutStrLn hdl $ frame
 
   --hPutStrLn hdl $ show state
   --print state
@@ -84,7 +87,7 @@ makeGameStep mGameState hdl = do
   putMVar mGameState state
 
 getFrame :: GameState -> IO String
-getFrame ((dir1, shape1), (dir2, shape2)) = return $ helper 80 24 ""
+getFrame ((dir1, shape1), (dir2, shape2), f) = return $ helper 80 24 ""
   where
     helper 0  0  frame = frame
     helper 0  y  frame = helper 80 (pred y) (chr(10):frame)
@@ -94,22 +97,25 @@ getFrame ((dir1, shape1), (dir2, shape2)) = return $ helper 80 24 ""
     helper x  1  frame = helper (pred x) 0 ('-':frame)
     helper x  y  frame
       | elem (x, y) shape1 || elem (x, y) shape2 = helper (pred x) y $ ('*':frame)
+      | elem (x, y) f                            = helper (pred x) y $ ('O':frame)  
       | otherwise                                = helper (pred x) y $ (' ':frame)
 
 iterateState :: GameState -> IO GameState
-iterateState ((dir1, shape1), (dir2, shape2)) = let 
-    change shape@((x, y):xs) R = ((x + 2, y): reverse ( drop 1 $ reverse shape))
-    change shape@((x, y):xs) L = ((x - 2, y): reverse ( drop 1 $ reverse shape))
-    change shape@((x, y):xs) U = ((x, y + 1): reverse ( drop 1 $ reverse shape))
-    change shape@((x, y):xs) D = ((x, y - 1): reverse ( drop 1 $ reverse shape))
+iterateState ((dir1, shape1), (dir2, shape2), f) = let
+    helper (x, y) shape = if elem (x, y) f then ((x, y):shape)
+                          else ((x, y):reverse (drop 1 $ reverse shape))
+    change shape@((x, y):xs) R = helper (x + 2, y) shape
+    change shape@((x, y):xs) L = helper (x - 2, y) shape
+    change shape@((x, y):xs) U = helper (x, y + 1) shape
+    change shape@((x, y):xs) D = helper (x, y - 1) shape
   in
-    return ((dir1, change shape1 dir1), (dir2, change shape2 dir2))
+    return ((dir1, change shape1 dir1), (dir2, change shape2 dir2), f)
 
 
 updateDirection :: Player -> Key -> GameState -> IO GameState
-updateDirection player key ((dir1, (pos1:xs)), (dir2, (pos2:xss))) = case player of 
-    Me    -> return ((getdir dir1 key, (pos1:xs)), (dir2, (pos2:xss)))
-    NotMe -> return ((dir1, (pos1:xs)), (getdir dir2 key, (pos2:xss)))
+updateDirection player key ((dir1, (pos1:xs)), (dir2, (pos2:xss)), f) = case player of 
+    Me    -> return ((getdir dir1 key, (pos1:xs)), (dir2, (pos2:xss)), f)
+    NotMe -> return ((dir1, (pos1:xs)), (getdir dir2 key, (pos2:xss)), f)
   where 
     getdir _ 'w'  = D
     getdir _ 'a'  = L
