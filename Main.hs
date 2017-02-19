@@ -6,6 +6,7 @@ module Main where
  
 import Network.Socket
 import System.IO
+import System.Random
 import Control.Monad
 import Control.Monad.State
 import Control.Concurrent
@@ -107,15 +108,17 @@ iterateState :: StateT GameState IO ()
 iterateState = let
     helper head@(x, y) Me = do
       ((dir, shape), notme, f) <- get
-      if elem (x, y) f then
-        put ((dir, (head:shape)), notme, delete head f)
+      if elem (x, y) f then do
+        fruit <- liftIO $ getFruit
+        put ((dir, (head:shape)), notme, (fruit : delete head f))
       else
         put ((dir, (head:reverse (drop 1 $ reverse shape))), notme, f)
 
     helper head@(x, y) NotMe = do
       (me, (dir, shape), f) <- get
-      if elem (x, y) f then
-        put (me, (dir, (head:shape)), delete head f)
+      if elem (x, y) f then do
+        fruit <- liftIO $ getFruit
+        put (me, (dir, (head:shape)), (fruit : delete head f))
       else
         put (me, (dir, (head:reverse (drop 1 $ reverse shape))), f)
 
@@ -128,6 +131,12 @@ iterateState = let
     (me, notme, f) <- get
     change me Me
     change notme NotMe
+
+getFruit :: IO Position
+getFruit = do
+  x <- randomRIO (1, 39)
+  y <- randomRIO (1, 11)
+  return (x * 2, y * 2)
 
 
 updateDirection :: Player -> Key -> GameState -> IO GameState
