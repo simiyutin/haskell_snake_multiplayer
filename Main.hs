@@ -109,7 +109,7 @@ iterateState = let
     helper head@(x, y) Me = do
       ((dir, shape), notme, f) <- get
       if elem (x, y) f then do
-        fruit <- liftIO $ getFruit
+        fruit <- getFruit
         put ((dir, (head:shape)), notme, (fruit : delete head f))
       else
         put ((dir, (head:reverse (drop 1 $ reverse shape))), notme, f)
@@ -117,7 +117,7 @@ iterateState = let
     helper head@(x, y) NotMe = do
       (me, (dir, shape), f) <- get
       if elem (x, y) f then do
-        fruit <- liftIO $ getFruit
+        fruit <- getFruit
         put (me, (dir, (head:shape)), (fruit : delete head f))
       else
         put (me, (dir, (head:reverse (drop 1 $ reverse shape))), f)
@@ -132,11 +132,16 @@ iterateState = let
     change me Me
     change notme NotMe
 
-getFruit :: IO Position
+getFruit :: StateT GameState IO Position
 getFruit = do
-  x <- randomRIO (1, 39)
-  y <- randomRIO (1, 11)
-  return (x * 2, y * 2)
+  x <- liftIO $ randomRIO (1, 39)
+  y <- liftIO $ randomRIO (1, 11)
+  let fruit = (x * 2, y * 2)
+  ((dir1, shape1), (dir2, shape2), f) <- get
+  if elem fruit (shape1 ++ shape2 ++ f) then
+    getFruit
+  else
+    return fruit
 
 
 updateDirection :: Player -> Key -> GameState -> IO GameState
