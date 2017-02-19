@@ -1,11 +1,17 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 module Main where
  
 import Network.Socket
 import System.IO
 import Control.Monad
+import Control.Monad.State
 import Control.Concurrent
 
 import Data.Char
+import Data.List
  
 main :: IO ()
 main = do
@@ -67,7 +73,7 @@ runGame hdl = do
     putMVar mGameState updatedState
 
   -- main game loop
-  forever $ makeGameStep mGameState hdl >> threadDelay 500000
+  forever $ makeGameStep mGameState hdl >> threadDelay 100000
 
 
 
@@ -75,14 +81,11 @@ makeGameStep :: MVar GameState -> Handle -> IO ()
 makeGameStep mGameState hdl = do 
   prevstate <- takeMVar mGameState
 
-  state <- iterateState prevstate
+  state <- execStateT iterateState prevstate
   frame <- getFrame state
   clearScreens hdl
   putStr frame
   hPutStrLn hdl $ frame
-
-  --hPutStrLn hdl $ show state
-  --print state
 
   putMVar mGameState state
 
@@ -100,16 +103,31 @@ getFrame ((dir1, shape1), (dir2, shape2), f) = return $ helper 80 24 ""
       | elem (x, y) f                            = helper (pred x) y $ ('O':frame)  
       | otherwise                                = helper (pred x) y $ (' ':frame)
 
-iterateState :: GameState -> IO GameState
-iterateState ((dir1, shape1), (dir2, shape2), f) = let
-    helper (x, y) shape = if elem (x, y) f then ((x, y):shape)
-                          else ((x, y):reverse (drop 1 $ reverse shape))
-    change shape@((x, y):xs) R = helper (x + 2, y) shape
-    change shape@((x, y):xs) L = helper (x - 2, y) shape
-    change shape@((x, y):xs) U = helper (x, y + 1) shape
-    change shape@((x, y):xs) D = helper (x, y - 1) shape
-  in
-    return ((dir1, change shape1 dir1), (dir2, change shape2 dir2), f)
+iterateState :: StateT GameState IO ()
+iterateState = let
+    helper head@(x, y) Me = do
+      ((dir, shape), notme, f) <- get
+      if elem (x, y) f then
+        put ((dir, (head:shape)), notme, delete head f)
+      else
+        put ((dir, (head:reverse (drop 1 $ reverse shape))), notme, f)
+
+    helper head@(x, y) NotMe = do
+      (me, (dir, shape), f) <- get
+      if elem (x, y) f then
+        put (me, (dir, (head:shape)), delete head f)
+      else
+        put (me, (dir, (head:reverse (drop 1 $ reverse shape))), f)
+
+
+    change (R, shape@((x, y):xs)) player = helper (x + 2, y) player
+    change (L, shape@((x, y):xs)) player = helper (x - 2, y) player
+    change (U, shape@((x, y):xs)) player = helper (x, y + 1) player
+    change (D, shape@((x, y):xs)) player = helper (x, y - 1) player
+  in do
+    (me, notme, f) <- get
+    change me Me
+    change notme NotMe
 
 
 updateDirection :: Player -> Key -> GameState -> IO GameState
