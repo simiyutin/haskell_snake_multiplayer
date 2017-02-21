@@ -47,11 +47,11 @@ handleConnection (sock, addr) = do
 
 type Key = Char
 
-data Direction = L | R | U | D deriving Show
+data Direction = L | R | U | D deriving (Show , Eq)
 type Position = (Int, Int)
 type Body = [Position]
 type Fruit = Position
-data Status = Alive | Dead
+data Status = Alive | Dead deriving Eq
 type Snake = (Direction, Status, Body)
 type Id = Int
 
@@ -88,19 +88,19 @@ runGame hdl = do
     putMVar mGameState updatedState
 
   -- main game loop
-  forever $ makeGameStep mGameState hdl >> threadDelay 100000
+  forever $ makeGameStep mGameState hdl >> threadDelay 300000
 
 
 updateDirection :: Id -> Key -> GameState -> IO GameState
 updateDirection id key state = return $ modifySnake id (setDir key) state
   where
     setDir :: Key -> Snake -> Snake
-    setDir key (d, s, b) = case key of
-      'w' -> (D, s, b)
-      'a' -> (L, s, b)
-      's' -> (U, s, b)
-      'd' -> (R, s, b)
-      _   -> (d, s, b)
+    setDir key (d, s, b)
+      | key == 'w' && d /= U = (D, s, b)
+      | key == 'a' && d /= R = (L, s, b)
+      | key == 's' && d /= D = (U, s, b)
+      | key == 'd' && d /= L = (R, s, b)
+      | otherwise = (d, s, b)
 
 
 makeGameStep :: MVar GameState -> Handle -> IO ()
@@ -120,18 +120,28 @@ iterateState = let
     helper :: Id -> StateT GameState IO ()
     helper id = do
       state <- get
-      let head = getNextHead $ snakeMap state ! id
-      if elem head (fruitList state) then do
-        let restricted = (getSnakesCoords state) ++ (fruitList state)
-        fruit <- getFruit restricted
-        put $ (deleteFruit head . addFruit fruit . modifySnake id (addHead head)) state
-      else
-        put $ (modifySnake id (addHead head) . modifySnake id popTail) state
+      let snake@(d, s, b) = snakeMap state ! id
+      unless (s == Dead) $ do
+        let head = getNextHead snake
+        if elem head (fruitList state) then do
+          let restricted = (getSnakesCoords state) ++ (fruitList state)
+          fruit <- getFruit restricted
+          put $ (deleteFruit head . addFruit fruit . modifySnake id (addHead head)) state
+        else do
+          let restricted = (getSnakesCoords state) ++ (getFieldEdges)
+          put $ modifySnake id (popTail . checkCollision restricted . addHead head) state
 
-    dropLast xs = reverse (drop 1 $ reverse xs)
+    getFieldEdges = [(x,y) | x <- [0..80], y <- [1..24], x == 0 || x == 80 || y == 1 || y == 24]    
+
+    checkCollision :: [Position] -> Snake -> Snake
+    checkCollision restricted snake@(d, _, head:b) 
+      | elem head restricted = (d, Dead, b)
+      | otherwise = snake
 
     addHead head snake@(d, s, b) = (d, s, head:b)
-    popTail snake@(d, s, b) = (d, s, reverse $ drop 1 (reverse b))
+    popTail snake@(d, Dead, b) = snake
+    popTail snake@(d, s, b) = (d, s, dropLast b) where
+      dropLast xs = reverse (drop 1 $ reverse xs)
     addFruit fruit state = state {fruitList = fruit : fruitList state}
     deleteFruit fruit state = state {fruitList = Data.List.delete fruit (fruitList state)}
 
