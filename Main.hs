@@ -13,6 +13,7 @@ import Control.Concurrent
 
 import Data.Char
 import Data.List
+import Data.Map.Strict
  
 main :: IO ()
 main = do
@@ -44,49 +45,62 @@ handleConnection (sock, addr) = do
   return hdl
 
 
-data Player = Me | NotMe deriving Show
 type Key = Char
 
 data Direction = L | R | U | D deriving Show
 type Position = (Int, Int)
-type Snake = [Position]
-type Fruits = [Position]
-type GameState = ((Direction, Snake), (Direction, Snake), Fruits)
-  
+type Body = [Position]
+type Fruit = Position
+data Status = Alive | Dead
+type Snake = (Direction, Status, Body)
+type Id = Int
 
+data GameState = GameState {snakeMap :: Map Id Snake, fruitList :: [Fruit]}
+
+addSnake = undefined
+deleteSnake = undefined
+modifySnake id f state = state {snakeMap = Data.Map.Strict.insert id (f $ snakeMap state ! id) (snakeMap state)}
+getSnakesCoords :: GameState -> [Position]
+getSnakesCoords state = Data.Map.Strict.foldr (\(d, s, b) acc -> b ++ acc) [] $ snakeMap state
+  
 runGame :: Handle -> IO ()
 runGame hdl = do
 
-  mGameState <- newMVar ((U, [(10, 10),(12, 10),(14, 10)]), (L, [(20, 10), (20, 9), (20, 8)]), [(60, 10)])
+  let newState = GameState {
+    snakeMap = fromList [(1, (U, Alive, [(10, 10),(12, 10),(14, 10)])), (2, (L, Alive, [(20, 10), (20, 9), (20, 8)]))],
+    fruitList = [(60, 10)]
+  }
+
+  mGameState <- newMVar newState
 
   -- handle local input
   forkIO $ forever $ do
     x <- getChar
     state <- takeMVar mGameState
-    updatedState <- updateDirection Me x state
+    updatedState <- updateDirection 1 x state
     putMVar mGameState updatedState
     
   -- handle client input
   forkIO $ forever $ do
     x <- hGetChar hdl
     state <- takeMVar mGameState
-    updatedState <- updateDirection NotMe x state
+    updatedState <- updateDirection 2 x state
     putMVar mGameState updatedState
 
   -- main game loop
   forever $ makeGameStep mGameState hdl >> threadDelay 100000
 
 
-updateDirection :: Player -> Key -> GameState -> IO GameState
-updateDirection player key ((dir1, (pos1:xs)), (dir2, (pos2:xss)), f) = case player of 
-    Me    -> return ((getdir dir1 key, (pos1:xs)), (dir2, (pos2:xss)), f)
-    NotMe -> return ((dir1, (pos1:xs)), (getdir dir2 key, (pos2:xss)), f)
-  where 
-    getdir _ 'w'  = D
-    getdir _ 'a'  = L
-    getdir _ 's'  = U
-    getdir _ 'd'  = R
-    getdir prev _ = prev
+updateDirection :: Id -> Key -> GameState -> IO GameState
+updateDirection id key state = return $ modifySnake id (setDir key) state
+  where
+    setDir :: Key -> Snake -> Snake
+    setDir key (d, s, b) = case key of
+      'w' -> (D, s, b)
+      'a' -> (L, s, b)
+      's' -> (U, s, b)
+      'd' -> (R, s, b)
+      _   -> (d, s, b)
 
 
 makeGameStep :: MVar GameState -> Handle -> IO ()
@@ -102,47 +116,50 @@ makeGameStep mGameState hdl = do
 
 iterateState :: StateT GameState IO ()
 iterateState = let
-    helper head@(x, y) Me = do
-      ((dir, shape), notme, f) <- get
-      if elem (x, y) f then do
-        fruit <- getFruit
-        put ((dir, (head:shape)), notme, (fruit : delete head f))
+
+    helper :: Id -> StateT GameState IO ()
+    helper id = do
+      state <- get
+      let head = getNextHead $ snakeMap state ! id
+      if elem head (fruitList state) then do
+        let restricted = (getSnakesCoords state) ++ (fruitList state)
+        fruit <- getFruit restricted
+        put $ (deleteFruit head . addFruit fruit . modifySnake id (addHead head)) state
       else
-        put ((dir, (head:reverse (drop 1 $ reverse shape))), notme, f)
+        put $ (modifySnake id (addHead head) . modifySnake id popTail) state
 
-    helper head@(x, y) NotMe = do
-      (me, (dir, shape), f) <- get
-      if elem (x, y) f then do
-        fruit <- getFruit
-        put (me, (dir, (head:shape)), (fruit : delete head f))
-      else
-        put (me, (dir, (head:reverse (drop 1 $ reverse shape))), f)
+    dropLast xs = reverse (drop 1 $ reverse xs)
 
+    addHead head snake@(d, s, b) = (d, s, head:b)
+    popTail snake@(d, s, b) = (d, s, reverse $ drop 1 (reverse b))
+    addFruit fruit state = state {fruitList = fruit : fruitList state}
+    deleteFruit fruit state = state {fruitList = Data.List.delete fruit (fruitList state)}
 
-    change (R, shape@((x, y):xs)) player = helper (x + 2, y) player
-    change (L, shape@((x, y):xs)) player = helper (x - 2, y) player
-    change (U, shape@((x, y):xs)) player = helper (x, y + 1) player
-    change (D, shape@((x, y):xs)) player = helper (x, y - 1) player
+    getNextHead :: Snake -> Position
+    getNextHead (dir, _, (x, y):xs) = case dir of 
+      R -> (x + 2, y)
+      L -> (x - 2, y)
+      U -> (x, y + 1)
+      D -> (x, y - 1)
+
   in do
-    (me, notme, f) <- get
-    change me Me
-    change notme NotMe
+    state <- get
+    foldM (\x id -> helper id) undefined $ keys (snakeMap state)
 
 
-getFruit :: StateT GameState IO Position
-getFruit = do
+getFruit :: [Position] -> StateT GameState IO Position
+getFruit restricted = do
   x <- liftIO $ randomRIO (1, 39)
   y <- liftIO $ randomRIO (1, 11)
   let fruit = (x * 2, y * 2)
-  ((dir1, shape1), (dir2, shape2), f) <- get
-  if elem fruit (shape1 ++ shape2 ++ f) then
-    getFruit
+  if elem fruit restricted then
+    getFruit restricted
   else
     return fruit
 
 
 getFrame :: GameState -> IO String
-getFrame ((dir1, shape1), (dir2, shape2), f) = return $ helper 80 24 ""
+getFrame state = return $ helper 80 24 ""
   where
     helper 0  0  frame = frame
     helper 0  y  frame = helper 80 (pred y) (chr(10):frame)
@@ -151,8 +168,8 @@ getFrame ((dir1, shape1), (dir2, shape2), f) = return $ helper 80 24 ""
     helper x  24 frame = helper (pred x) 24 ('-':frame)
     helper x  1  frame = helper (pred x) 0 ('-':frame)
     helper x  y  frame
-      | elem (x, y) shape1 || elem (x, y) shape2 = helper (pred x) y $ ('*':frame)
-      | elem (x, y) f                            = helper (pred x) y $ ('O':frame)  
+      | elem (x, y) (getSnakesCoords state)      = helper (pred x) y $ ('*':frame)
+      | elem (x, y) (fruitList state)            = helper (pred x) y $ ('O':frame)  
       | otherwise                                = helper (pred x) y $ (' ':frame)
 
 
