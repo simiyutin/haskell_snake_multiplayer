@@ -29,7 +29,7 @@ main = do
     -- Let's go fucking craazyyyy (c)
     -- IAC DO LINEMODE IAC WILL ECHO (@see https://tools.ietf.org/html/rfc854#page-14,
     -- http://users.cs.cf.ac.uk/Dave.Marshall/Internet/node141.html)
-    hPutStrLn hdl $ (chr(255):chr(253):chr(34):chr(255):chr(251):chr(1):[])
+    hPutStr hdl $ (chr(255):chr(253):chr(34):chr(255):chr(251):chr(1):[])
 
     runGame hdl
 
@@ -172,7 +172,7 @@ getFrame :: GameState -> IO String
 getFrame state = return $ helper 80 24 ""
   where
     helper 0  0  frame = frame
-    helper 0  y  frame = helper 80 (pred y) (chr(10):frame)
+    helper 0  y  frame = helper 80 (pred y) ('\r':'\n':frame)--(chr(10):frame)
     helper 80 y  frame = helper (pred 80) y ('|':frame)
     helper 1  y  frame = helper 0 y ('|':frame)
     helper x  24 frame = helper (pred x) 24 ('-':frame)
@@ -187,16 +187,17 @@ renderFrame :: Handle -> String -> IO ()
 renderFrame hdl frame = do
   clearScreens hdl
   putStr frame
-  hPutStrLn hdl $ frame
+  --hPutStr hdl $ "1\r\n2\r\n3"
+  hPutStr hdl $ frame
 
 
 clearScreens :: Handle -> IO ()
 clearScreens hdl = do
-  let clearCommand = "\027[2J"
-  let resetCursorCommand = "\027[H"
-  hPutStr hdl clearCommand
+  let clearCommand = chr(27):"[2J"
+  let resetCursorCommand = chr(27):"[H"
+  --hPutStr hdl clearCommand
   hPutStr hdl resetCursorCommand
-  putStr clearCommand 
+  --putStr clearCommand 
   putStr resetCursorCommand
 
 
