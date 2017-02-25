@@ -1,4 +1,64 @@
 EXECNAME="SnakeServer"
-killall "$EXECNAME" &> /dev/null
-ghc -o "$EXECNAME" Main.hs
-./"$EXECNAME"
+
+##
+# USAGE
+# ./devrun.sh all -- compile, start server and client
+# ./devrun.sh -- compile, start ONLY server
+# ./devrun.sh client -- start ONLY client
+##
+
+compile()
+{
+	echo -e "\e[93mCompiling...\e[0m"
+	rm -f "$EXECNAME"
+
+	echo -e "\e[44m"
+	ghc -o "$EXECNAME" Main.hs
+	GHCEXIT_CODE=$?
+	echo -e "\e[0m"
+
+	if [[ "$GHCEXIT_CODE" != "0" ]]
+	then
+	    echo -e "\e[31mCompilation failed\e[0m"
+	    exit
+	fi
+}
+
+kill_server_client()
+{
+	echo -e "\e[93mKill all servers and telnet clients...\e[0m"
+	killall "$EXECNAME" &> /dev/null
+	killall telnet &> /dev/null
+}
+
+run_server()
+{
+	kill_server_client
+
+	echo -e "\e[93mRunning server...\e[0m"
+	./"$EXECNAME" &
+}
+
+run_client()
+{
+	telnet 127.0.0.1 4242
+}
+
+case "$1" in
+	""|"server")
+		compile
+		run_server
+		;;
+	"client")
+		run_client
+		;;
+	"all")
+		compile
+		run_server
+		run_client
+		;;
+	*)
+		echo "lolwut?"
+		exit
+		;;
+esac

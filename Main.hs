@@ -5,15 +5,18 @@
 module Main where
  
 import Network.Socket
+
 import System.IO
 import System.Random
 import Control.Monad
 import Control.Monad.State
 import Control.Concurrent
 
-import Data.Char
+--import Data.Char
 import Data.List
 import Data.Map.Strict
+
+import TelnetOutput
  
 main :: IO ()
 main = do
@@ -25,30 +28,25 @@ main = do
     connection <- accept sock
     hdl <- handleConnection connection
 
-    -- force telnet client into character mode
-    -- Let's go fucking craazyyyy (c)
-    -- IAC DO LINEMODE IAC WILL ECHO (@see https://tools.ietf.org/html/rfc854#page-14,
-    -- http://users.cs.cf.ac.uk/Dave.Marshall/Internet/node141.html)
-    hPutStr hdl $ (chr(255):chr(253):chr(34):chr(255):chr(251):chr(1):[])
+    forceTelnetClientCharMode hdl
 
     runGame hdl
 
 handleConnection :: (Socket, SockAddr) -> IO Handle
 handleConnection (sock, addr) = do
+    hdl <- socketToHandle sock ReadWriteMode
+    hSetBuffering hdl NoBuffering
+    -- Maybe :: notMonad (:D) hSetBuffering stdout NoBuffering too?
 
-  hdl <- socketToHandle sock ReadWriteMode
-  hSetBuffering hdl NoBuffering
+    hSetBuffering stdin NoBuffering
+    hSetEcho stdin False
 
-  hSetBuffering stdin NoBuffering
-  hSetEcho stdin False
-
-  return hdl
+    return hdl
 
 
 type Key = Char
 
 data Direction = L | R | U | D deriving (Show , Eq)
-type Position = (Int, Int)
 type Body = [Position]
 type Fruit = Position
 data Status = Alive | Dead deriving Eq
@@ -83,6 +81,7 @@ runGame hdl = do
   -- handle client input
   forkIO $ forever $ do
     x <- hGetChar hdl
+    hPutStr hdl ("Key: " ++ [x])
     state <- takeMVar mGameState
     updatedState <- updateDirection 2 x state
     putMVar mGameState updatedState
@@ -108,8 +107,8 @@ makeGameStep mGameState hdl = do
   prevstate <- takeMVar mGameState
 
   state <- execStateT iterateState prevstate
-  frame <- getFrame state
-  renderFrame hdl frame
+  frame <- genFrame state
+  showFrame hdl frame
 
   putMVar mGameState state
 
@@ -167,38 +166,9 @@ getFruit restricted = do
   else
     return fruit
 
-
-getFrame :: GameState -> IO String
-getFrame state = return $ helper 80 24 ""
-  where
-    helper 0  0  frame = frame
-    helper 0  y  frame = helper 80 (pred y) ('\r':'\n':frame)--(chr(10):frame)
-    helper 80 y  frame = helper (pred 80) y ('|':frame)
-    helper 1  y  frame = helper 0 y ('|':frame)
-    helper x  24 frame = helper (pred x) 24 ('-':frame)
-    helper x  1  frame = helper (pred x) 0 ('-':frame)
-    helper x  y  frame
-      | elem (x, y) (getSnakesCoords state)      = helper (pred x) y $ ('*':frame)
-      | elem (x, y) (fruitList state)            = helper (pred x) y $ ('O':frame)  
-      | otherwise                                = helper (pred x) y $ (' ':frame)
-
-
-renderFrame :: Handle -> String -> IO ()
-renderFrame hdl frame = do
-  clearScreens hdl
-  putStr frame
-  --hPutStr hdl $ "1\r\n2\r\n3"
-  hPutStr hdl $ frame
-
-
-clearScreens :: Handle -> IO ()
-clearScreens hdl = do
-  let clearCommand = chr(27):"[2J"
-  let resetCursorCommand = chr(27):"[H"
-  --hPutStr hdl clearCommand
-  hPutStr hdl resetCursorCommand
-  --putStr clearCommand 
-  putStr resetCursorCommand
-
-
-
+instance FrameCoordState GameState where
+    -- getSymbolAt :: GameState -> Position -> Maybe FrameSymbolsSeq
+    getSymbolAt state pos
+        | elem pos (getSnakesCoords state) = Just (FrameSymbol (EmptyModifier, '*'))
+        | elem pos (fruitList state) = Just (FrameSymbol (EmptyModifier, 'O'))
+        | otherwise = Nothing
