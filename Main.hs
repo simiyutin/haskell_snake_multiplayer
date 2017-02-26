@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Main where
@@ -167,8 +168,8 @@ getFruit restricted = do
     return fruit
 
 instance FrameCoordState GameState where
-    -- getSymbolAt :: GameState -> Position -> Maybe FrameSymbolsSeq
+    getSymbolAt :: GameState -> Position -> Maybe FrameSymbolsSeq
     getSymbolAt state pos
-        | elem pos (getSnakesCoords state) = Just (FrameSymbol (EmptyModifier, '*'))
-        | elem pos (fruitList state) = Just (FrameSymbol (EmptyModifier, 'O'))
+        | elem pos (getSnakesCoords state) = Just (FrameSymbol (emptyModifier, '*'))
+        | elem pos (fruitList state) = Just (FrameSymbol (emptyModifier, 'O'))
         | otherwise = Nothing
