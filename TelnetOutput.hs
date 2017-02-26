@@ -18,7 +18,20 @@ forceTelnetClientCharMode hdl = do
     -- http://users.cs.cf.ac.uk/Dave.Marshall/Internet/node141.html)
     hPutStr hdl $ (chr(255):chr(253):chr(34):chr(255):chr(251):chr(1):[])
 
-data Color = Black | Yellow deriving (Show)
+data Color = Black | Red | Green | Yellow
+           | Blue | Magenta | Cyan | White deriving (Show, Enum, Bounded)
+
+esc :: Char
+esc = chr(27)
+
+getColorANSISeq :: Color -> String
+getColorANSISeq color = esc:"[" ++ show (30 + fromEnum color) ++ "m"
+
+getCleanColorANSISeq :: String
+getCleanColorANSISeq = esc:"[0m"
+
+getColorModifier :: Color -> Modifier
+getColorModifier color = Modifier (getColorANSISeq color, getCleanColorANSISeq)
 
 -- for colors, etc
 data Modifier = Modifier (String, String)
@@ -87,9 +100,9 @@ showStrFrame hdl strFrame = do
 
 clearScreen :: Handle -> IO ()
 clearScreen hdl = do
-    let clearDownCommand = chr(27):"[J"
-    let clearCommand = chr(27):"[2J"
-    let resetCursorCommand = chr(27):"[H"
+    let clearDownCommand = esc:"[J"
+    let clearCommand = esc:"[2J"
+    let resetCursorCommand = esc:"[H"
 
     -- simply reset cursor and rewrite all text... ;)
     hPutStr hdl resetCursorCommand

@@ -170,6 +170,6 @@ getFruit restricted = do
 instance FrameCoordState GameState where
     getSymbolAt :: GameState -> Position -> Maybe FrameSymbolsSeq
     getSymbolAt state pos
-        | elem pos (getSnakesCoords state) = Just (FrameSymbol (emptyModifier, '*'))
-        | elem pos (fruitList state) = Just (FrameSymbol (emptyModifier, 'O'))
+        | elem pos (getSnakesCoords state) = Just (FrameSymbol (getColorModifier Blue, '*'))
+        | elem pos (fruitList state) = Just (FrameSymbol (getColorModifier Red, 'O'))
         | otherwise = Nothing
