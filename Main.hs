@@ -63,8 +63,8 @@ connectionsLoop mGameState sock = do
     
 addNewPlayer :: GameState -> Handle -> IO GameState
 addNewPlayer state hdl = do
-    body <- spawnBody state
-    let snake = (L, Alive, body, hdl)
+    newBody <- spawnBody state
+    let snake = Snake {direction = L, status = Alive, body = newBody, handle = hdl}
     return $ state {snakeMap = Data.Map.Strict.insert (counter state) snake (snakeMap state), counter = counter state + 1}
 
 spawnBody :: GameState -> IO [Position]
@@ -101,7 +101,7 @@ data Direction = L | R | U | D deriving (Show , Eq)
 type Body = [Position]
 type Fruit = Position
 data Status = Alive | Dead deriving Eq
-type Snake = (Direction, Status, Body, Handle)
+data Snake = Snake {direction :: Direction, status :: Status, body :: Body, handle :: Handle}
 type Id = Int
 
 data GameState = GameState {snakeMap :: Map Id Snake, fruitList :: [Fruit], counter :: Int}
@@ -110,19 +110,21 @@ addSnake = undefined
 deleteSnake = undefined
 modifySnake id f state = state {snakeMap = Data.Map.Strict.insert id (f $ snakeMap state ! id) (snakeMap state)}
 getSnakesCoords :: GameState -> [Position]
-getSnakesCoords state = Data.Map.Strict.foldr (\(d, s, b, h) acc -> b ++ acc) [] $ snakeMap state
+getSnakesCoords state = Data.Map.Strict.foldr (\snake acc -> body snake ++ acc) [] $ snakeMap state
   
 
 updateDirection :: Id -> Key -> GameState -> IO GameState
 updateDirection id key state = return $ modifySnake id (setDir key) state
   where
     setDir :: Key -> Snake -> Snake
-    setDir key (d, s, b, h)
-      | key == 'w' && d /= U = (D, s, b, h)
-      | key == 'a' && d /= R = (L, s, b, h)
-      | key == 's' && d /= D = (U, s, b, h)
-      | key == 'd' && d /= L = (R, s, b, h)
-      | otherwise = (d, s, b, h)
+    setDir key snake
+        | key == 'w' && d /= U = snake {direction = D}
+        | key == 'a' && d /= R = snake {direction = L}
+        | key == 's' && d /= D = snake {direction = U}
+        | key == 'd' && d /= L = snake {direction = R}
+        | otherwise = snake
+      where
+        d = direction snake
 
 
 makeGameStep :: MVar GameState -> IO ()
@@ -141,7 +143,7 @@ showFrameToAll state frame = foldM (\x snake -> showFrameToSnake snake frame) un
 
     
 showFrameToSnake :: Snake -> Frame -> IO ()
-showFrameToSnake (_, _, _, hdl) frame = showFrame hdl frame
+showFrameToSnake snake frame = showFrame (handle snake) frame
 
 
 iterateState :: StateT GameState IO ()
@@ -150,8 +152,8 @@ iterateState = let
     helper :: Id -> StateT GameState IO ()
     helper id = do
       state <- get
-      let snake@(d, s, b, h) = snakeMap state ! id
-      unless (s == Dead) $ do
+      let snake = snakeMap state ! id
+      unless (status snake == Dead) $ do
         let head = getNextHead snake
         if elem head (fruitList state) then do
           let restricted = (getSnakesCoords state) ++ (fruitList state)
@@ -163,23 +165,27 @@ iterateState = let
 
 
     checkCollision :: [Position] -> Snake -> Snake
-    checkCollision restricted snake@(d, _, head:b, h) 
-      | elem head restricted = (d, Dead, b, h)
-      | otherwise = snake
+    checkCollision restricted snake 
+        | elem head restricted = snake {status = Dead} 
+        | otherwise = snake
+      where 
+        head:xs = body snake
 
-    addHead head snake@(d, s, b, h) = (d, s, head:b, h)
-    popTail snake@(d, Dead, b, h) = snake
-    popTail snake@(d, s, b, h) = (d, s, dropLast b, h) where
+    addHead head snake = snake {body = head : body snake} 
+    popTail snake | status snake == Dead = snake
+                  | otherwise            = snake {body = dropLast $ body snake} where
       dropLast xs = reverse (drop 1 $ reverse xs)
     addFruit fruit state = state {fruitList = fruit : fruitList state}
     deleteFruit fruit state = state {fruitList = Data.List.delete fruit (fruitList state)}
 
     getNextHead :: Snake -> Position
-    getNextHead (dir, _, (x, y):xs, _) = case dir of 
-      R -> (x + 2, y)
-      L -> (x - 2, y)
-      U -> (x, y + 1)
-      D -> (x, y - 1)
+    getNextHead snake = case direction snake of 
+        R -> (x + 2, y)
+        L -> (x - 2, y)
+        U -> (x, y + 1)
+        D -> (x, y - 1)
+      where
+        (x,y) = head $ body snake
 
   in do
     state <- get
