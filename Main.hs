@@ -17,7 +17,18 @@ import Data.List
 import Data.Map.Strict
 
 import TelnetOutput
- 
+
+type Key = Char
+data Direction = L | R | U | D deriving (Show , Eq)
+type Body = [Position]
+type Fruit = Position
+data Status = Alive | Dead deriving Eq
+type Id = Int
+
+data Snake = Snake {direction :: Direction, status :: Status, body :: Body, handle :: Handle}
+data GameState = GameState {snakeMap :: Map Id Snake, fruitList :: [Fruit], counter :: Id} 
+
+
 main :: IO ()
 main = do
     sock <- socket AF_INET Stream 0    -- create socket
@@ -37,7 +48,6 @@ main = do
 
     runGame mGameState
     
-
 
 runGame :: MVar GameState -> IO ()
 runGame mGameState = forever $ makeGameStep mGameState >> threadDelay 300000
@@ -67,6 +77,7 @@ addNewPlayer state hdl = do
     let snake = Snake {direction = L, status = Alive, body = newBody, handle = hdl}
     return $ state {snakeMap = Data.Map.Strict.insert (counter state) snake (snakeMap state), counter = counter state + 1}
 
+
 spawnBody :: GameState -> IO [Position]
 spawnBody state = let
     helper restricted = do 
@@ -78,9 +89,9 @@ spawnBody state = let
     let restricted = (getSnakesCoords state) ++ (fruitList state) ++ getFieldEdges 
     helper restricted
 
+
 getLastId :: GameState -> IO Id
 getLastId state = return $ counter state - 1 
-
  
   
 handleConnection :: (Socket, SockAddr) -> IO Handle
@@ -95,20 +106,10 @@ handleConnection (sock, addr) = do
     return hdl
 
 
-type Key = Char
-
-data Direction = L | R | U | D deriving (Show , Eq)
-type Body = [Position]
-type Fruit = Position
-data Status = Alive | Dead deriving Eq
-data Snake = Snake {direction :: Direction, status :: Status, body :: Body, handle :: Handle}
-type Id = Int
-
-data GameState = GameState {snakeMap :: Map Id Snake, fruitList :: [Fruit], counter :: Int}
-
-addSnake = undefined
-deleteSnake = undefined
+modifySnake :: Id -> (Snake -> Snake) -> GameState -> GameState
 modifySnake id f state = state {snakeMap = Data.Map.Strict.insert id (f $ snakeMap state ! id) (snakeMap state)}
+
+
 getSnakesCoords :: GameState -> [Position]
 getSnakesCoords state = Data.Map.Strict.foldr (\snake acc -> body snake ++ acc) [] $ snakeMap state
   
@@ -149,8 +150,8 @@ showFrameToSnake snake frame = showFrame (handle snake) frame
 iterateState :: StateT GameState IO ()
 iterateState = let
 
-    helper :: Id -> StateT GameState IO ()
-    helper id = do
+    iterateById :: Id -> StateT GameState IO ()
+    iterateById id = do
       state <- get
       let snake = snakeMap state ! id
       unless (status snake == Dead) $ do
@@ -171,11 +172,18 @@ iterateState = let
       where 
         head:xs = body snake
 
+    addHead :: Position -> Snake -> Snake
     addHead head snake = snake {body = head : body snake} 
+
+    popTail :: Snake -> Snake
     popTail snake | status snake == Dead = snake
                   | otherwise            = snake {body = dropLast $ body snake} where
       dropLast xs = reverse (drop 1 $ reverse xs)
+
+    addFruit :: Fruit -> GameState -> GameState
     addFruit fruit state = state {fruitList = fruit : fruitList state}
+
+    deleteFruit :: Fruit -> GameState -> GameState
     deleteFruit fruit state = state {fruitList = Data.List.delete fruit (fruitList state)}
 
     getNextHead :: Snake -> Position
@@ -189,10 +197,12 @@ iterateState = let
 
   in do
     state <- get
-    foldM (\x id -> helper id) undefined $ keys (snakeMap state)
+    foldM (\x id -> iterateById id) undefined $ keys (snakeMap state)
+
 
 getFieldEdges :: [Position]
 getFieldEdges = [(x,y) | x <- [0..80], y <- [1..24], x == 0 || x == 80 || y == 1 || y == 24]    
+
 
 getFreePosition :: [Position] -> IO Position
 getFreePosition restricted = do
@@ -203,6 +213,7 @@ getFreePosition restricted = do
     getFreePosition restricted
   else
     return fruit
+
 
 instance FrameCoordState GameState where
     getSymbolAt :: GameState -> Position -> Maybe FrameSymbolsSeq
