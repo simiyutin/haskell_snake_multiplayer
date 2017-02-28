@@ -31,12 +31,16 @@ kill_server_client()
 	killall telnet &> /dev/null
 }
 
-run_server()
+run_server_async()
 {
-	kill_server_client
-
 	echo -e "\e[93mRunning server...\e[0m"
-	./"$EXECNAME" &
+	./"$EXECNAME"&
+}
+
+run_server_sync()
+{
+	echo -e "\e[93mRunning server...\e[0m"
+	./"$EXECNAME"
 }
 
 run_client()
@@ -47,14 +51,26 @@ run_client()
 case "$1" in
 	""|"server")
 		compile
-		run_server
+                kill_server_client
+		run_server_async
 		;;
 	"client")
 		run_client
 		;;
+        "kill")
+		kill_server_client
+		;;
+        "compile")
+		compile
+		;;
+        "run")
+                kill_server_client
+		run_server_sync
+		;;
 	"all")
 		compile
-		run_server
+                kill_server_client
+		run_server_async
 		run_client
 		;;
 	*)
