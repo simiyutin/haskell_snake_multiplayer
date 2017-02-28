@@ -140,11 +140,11 @@ makeGameStep mGameState = do
 
 
 showFrameToAll :: GameState -> Frame -> IO ()
-showFrameToAll state frame = foldM (\x snake -> showFrameToSnake snake frame) undefined $ snakeMap state
+showFrameToAll state frame = forEach (snakeMap state) (showFrameToSnake frame) 
 
     
-showFrameToSnake :: Snake -> Frame -> IO ()
-showFrameToSnake snake frame = showFrame (handle snake) frame
+showFrameToSnake :: Frame -> Snake -> IO ()
+showFrameToSnake frame snake = showFrame (handle snake) frame
 
 
 iterateState :: StateT GameState IO ()
@@ -197,7 +197,11 @@ iterateState = let
 
   in do
     state <- get
-    foldM (\x id -> iterateById id) undefined $ keys (snakeMap state)
+    forEach (keys $ snakeMap state) iterateById
+
+
+forEach :: (Monad m, Foldable f) => f a -> (a -> m r) -> m r
+forEach container f = foldM (\acc x -> f x) undefined container
 
 
 getFieldEdges :: [Position]
