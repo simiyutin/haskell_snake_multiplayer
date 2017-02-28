@@ -13,7 +13,6 @@ import Control.Monad
 import Control.Monad.State
 import Control.Concurrent
 
---import Data.Char
 import Data.List
 import Data.Map.Strict
 
@@ -44,13 +43,11 @@ runGame :: MVar GameState -> IO ()
 runGame mGameState = forever $ makeGameStep mGameState >> threadDelay 300000
     
 
-
 connectionsLoop :: MVar GameState -> Socket -> IO ThreadId
 connectionsLoop mGameState sock = do
     connection <- accept sock
     hdl <- handleConnection connection
 
-    putStrLn "player connected" 
     state <- takeMVar mGameState
     newState <- addNewPlayer state hdl
     id <- getLastId newState
@@ -59,7 +56,6 @@ connectionsLoop mGameState sock = do
     -- handle client input
     forkIO $ forever $ do
       dir <- hGetChar hdl
-      hPutStr hdl ("Key: " ++ [dir])
       state <- takeMVar mGameState
       newState <- updateDirection id dir state
       putMVar mGameState newState
